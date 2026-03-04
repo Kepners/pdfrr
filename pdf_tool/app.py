@@ -12,6 +12,7 @@ from collections import defaultdict
 from tkinter import filedialog
 import tkinter as tk
 import customtkinter as ctk
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageTk
 
 
 # ── Brand palette (from logo) ─────────────────────────────────────────────────
@@ -185,6 +186,7 @@ def _res(name: str) -> Path:
 
 LOGO_ICO = _res("logo.ico")
 LOGO_PNG = _res("logo.png")
+SPLASH_MP4 = _res("splash.mp4")
 
 
 class App(ctk.CTk):
@@ -194,6 +196,7 @@ class App(ctk.CTk):
         self.geometry("520x620")
         self.resizable(False, False)
         self.configure(fg_color=BG)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Set window icon
         try:
@@ -224,12 +227,27 @@ class App(ctk.CTk):
         self._progress_value = 0.0
         self._progress_target = 0.0
 
-        self._build_home()
+        self._splash_after = None
+        self._splash_done_after = None
+        self._splash_reader = None
+        self._splash_video_label = None
+        self._splash_photo = None
+        self._splash_frame_size = (384, 216)
+        self._splash_corner_radius = 26
+        self._splash_delay_ms = 33
+        self._splash_active = False
+
+        self._build_splash()
 
     # ── core helpers ──────────────────────────────────────────────────────────
 
     def _clear(self):
-        for handle_name in ("_mode_anim_after", "_progress_anim_after"):
+        for handle_name in (
+            "_mode_anim_after",
+            "_progress_anim_after",
+            "_splash_after",
+            "_splash_done_after",
+        ):
             handle = getattr(self, handle_name, None)
             if handle is not None:
                 try:
@@ -237,12 +255,23 @@ class App(ctk.CTk):
                 except Exception:
                     pass
                 setattr(self, handle_name, None)
+        self._close_splash_reader()
+        self._splash_active = False
+        self._splash_video_label = None
+        self._splash_photo = None
         self._toggle_left = None
         self._toggle_right = None
         self._left_frame = None
         self._right_frame = None
         for w in self.winfo_children():
             w.destroy()
+
+    def _on_close(self):
+        self._clear()
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
 
     def _refresh(self):
         self._pdfs         = scan_folder(self._folder)
@@ -253,6 +282,173 @@ class App(ctk.CTk):
             self._use_titles  = detect_uses_titles(self._pdfs[0])
             self._titles_auto = True
         self._build_home()
+
+    # ── Splash ────────────────────────────────────────────────────────────────
+
+    def _build_splash(self):
+        self._clear()
+        self._splash_active = True
+
+        body = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        body.pack(fill="both", expand=True)
+
+        title = ctk.CTkFrame(body, fg_color="transparent")
+        title.place(relx=0.5, rely=0.18, anchor="center")
+        ctk.CTkLabel(title, text="<",
+                     font=("Segoe UI", 40, "bold"), text_color=CYAN).pack(side="left")
+        ctk.CTkLabel(title, text="PDF",
+                     font=("Segoe UI", 40, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(title, text=">",
+                     font=("Segoe UI", 40, "bold"), text_color=CYAN).pack(side="left")
+
+        shell = ctk.CTkFrame(
+            body,
+            width=430,
+            height=248,
+            corner_radius=44,
+            fg_color=PANEL,
+            border_width=1,
+            border_color=BORDER,
+        )
+        shell.place(relx=0.5, rely=0.5, anchor="center")
+        shell.pack_propagate(False)
+
+        inner = ctk.CTkFrame(
+            shell,
+            width=406,
+            height=224,
+            corner_radius=36,
+            fg_color=CARD,
+            border_width=1,
+            border_color=CYAN_DIM,
+        )
+        inner.place(relx=0.5, rely=0.5, anchor="center")
+        inner.pack_propagate(False)
+
+        self._splash_video_label = tk.Label(
+            inner,
+            bg=CARD,
+            bd=0,
+            highlightthickness=0,
+        )
+        self._splash_video_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        playing = self._start_splash_video()
+        if not playing:
+            self._set_splash_fallback()
+
+        ctk.CTkLabel(
+            body,
+            text="Loading workspace…",
+            font=("Segoe UI", 12),
+            text_color=SUBTEXT,
+        ).place(relx=0.5, rely=0.80, anchor="center")
+
+        self._splash_done_after = self.after(2400, self._end_splash)
+
+    def _end_splash(self):
+        self._splash_done_after = None
+        self._build_home()
+
+    def _start_splash_video(self) -> bool:
+        if self._splash_video_label is None or not SPLASH_MP4.exists():
+            return False
+
+        try:
+            import imageio.v2 as imageio
+            self._splash_reader = imageio.get_reader(str(SPLASH_MP4), format="ffmpeg")
+            meta = self._splash_reader.get_meta_data()
+            fps = float(meta.get("fps", 30) or 30)
+            self._splash_delay_ms = max(20, min(60, int(round(1000 / fps))))
+        except Exception:
+            self._close_splash_reader()
+            return False
+
+        self._draw_splash_frame()
+        return True
+
+    def _draw_splash_frame(self):
+        if not self._splash_active or self._splash_video_label is None:
+            return
+
+        frame = None
+        if self._splash_reader is not None:
+            try:
+                frame = self._splash_reader.get_next_data()
+            except Exception:
+                self._restart_splash_video()
+                if self._splash_reader is not None:
+                    try:
+                        frame = self._splash_reader.get_next_data()
+                    except Exception:
+                        frame = None
+
+        if frame is None:
+            self._splash_after = self.after(60, self._draw_splash_frame)
+            return
+
+        try:
+            image = self._rounded_frame_from_array(frame)
+            self._splash_photo = ImageTk.PhotoImage(image)
+            self._splash_video_label.configure(image=self._splash_photo, text="")
+            self._splash_video_label.image = self._splash_photo
+        except tk.TclError:
+            self._splash_after = None
+            return
+
+        self._splash_after = self.after(self._splash_delay_ms, self._draw_splash_frame)
+
+    def _restart_splash_video(self):
+        self._close_splash_reader()
+        try:
+            import imageio.v2 as imageio
+            self._splash_reader = imageio.get_reader(str(SPLASH_MP4), format="ffmpeg")
+        except Exception:
+            self._splash_reader = None
+
+    def _close_splash_reader(self):
+        if self._splash_reader is None:
+            return
+        try:
+            self._splash_reader.close()
+        except Exception:
+            pass
+        self._splash_reader = None
+
+    def _set_splash_fallback(self):
+        if self._splash_video_label is None:
+            return
+
+        try:
+            base = Image.open(str(LOGO_PNG)).convert("RGB") if LOGO_PNG.exists() else None
+            if base is None:
+                return
+            fitted = ImageOps.fit(
+                base,
+                self._splash_frame_size,
+                method=Image.Resampling.LANCZOS
+            ).filter(ImageFilter.GaussianBlur(0.5))
+            image = self._round_image(fitted, self._splash_corner_radius)
+            self._splash_photo = ImageTk.PhotoImage(image)
+            self._splash_video_label.configure(image=self._splash_photo, text="")
+            self._splash_video_label.image = self._splash_photo
+        except Exception:
+            self._splash_video_label.configure(
+                text="<PDF>",
+                fg=CYAN,
+                bg=CARD,
+                font=("Segoe UI", 26, "bold"),
+            )
+
+    def _rounded_frame_from_array(self, frame):
+        image = Image.fromarray(frame).convert("RGB")
+        fitted = ImageOps.fit(
+            image,
+            self._splash_frame_size,
+            method=Image.Resampling.LANCZOS
+        )
+        smoothed = fitted.filter(ImageFilter.GaussianBlur(0.35))
+        return self._round_image(smoothed, self._splash_corner_radius)
 
     # ── HOME ──────────────────────────────────────────────────────────────────
 
@@ -896,6 +1092,16 @@ class App(ctk.CTk):
     @staticmethod
     def _tracked_text(word: str) -> str:
         return " ".join(word)
+
+    @staticmethod
+    def _round_image(image: Image.Image, radius: int) -> Image.Image:
+        rgba = image.convert("RGBA")
+        w, h = rgba.size
+        mask = Image.new("L", (w, h), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
+        rgba.putalpha(mask)
+        return rgba
 
     @staticmethod
     def _blend_hex(color_a: str, color_b: str, t: float) -> str:

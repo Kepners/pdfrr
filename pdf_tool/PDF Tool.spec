@@ -4,14 +4,30 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ('logo.ico', '.'),
     ('logo.png', '.'),
+    ('splash.mp4', '.'),
 ]
 binaries = []
-hiddenimports = ['pdfplumber', 'pypdf', 'customtkinter', 'darkdetect', 'PIL', 'PIL.Image']
+hiddenimports = [
+    'pdfplumber',
+    'pypdf',
+    'customtkinter',
+    'darkdetect',
+    'PIL',
+    'PIL.Image',
+    'imageio',
+    'imageio.v2',
+    'imageio.plugins.ffmpeg',
+    'imageio_ffmpeg',
+]
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pdfplumber')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('PIL')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('imageio')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('imageio_ffmpeg')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

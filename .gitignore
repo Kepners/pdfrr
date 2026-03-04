@@ -25,6 +25,7 @@ desktop.ini
 
 # Large media files in root (AI-generated assets)
 *.mp4
+!pdf_tool/splash.mp4
 ChatGPT Image*.png
 ChatGPT Image*.ico
 ChatGPT Image*.webp

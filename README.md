@@ -16,6 +16,7 @@
 ```bash
 cd pdf_tool
 pip install customtkinter pdfplumber pypdf Pillow pyinstaller
+pip install imageio imageio-ffmpeg
 python app.py
 ```
 
