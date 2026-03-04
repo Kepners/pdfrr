@@ -200,12 +200,14 @@ def _res(name: str) -> Path:
 LOGO_ICO = _res("logo.ico")
 LOGO_PNG = _res("logo.png")
 SPLASH_MP4 = _res("splash.mp4")
+APP_WORD = "PDFrr"
+APP_BRAND = f"<{APP_WORD}>"
 
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("<PDF>")
+        self.title(APP_BRAND)
         self.geometry("520x620")
         self.resizable(False, False)
         self.configure(fg_color=BG)
@@ -235,6 +237,7 @@ class App(ctk.CTk):
         self._right_frame = None
         self._toggle_left = None
         self._toggle_right = None
+        self._top_tab_btn = None
         self._mode_anim_after = None
         self._progress_anim_after = None
         self._progress_value = 0.0
@@ -274,6 +277,7 @@ class App(ctk.CTk):
         self._splash_photo = None
         self._toggle_left = None
         self._toggle_right = None
+        self._top_tab_btn = None
         self._left_frame = None
         self._right_frame = None
         for w in self.winfo_children():
@@ -315,7 +319,7 @@ class App(ctk.CTk):
         title.place(relx=0.5, rely=0.18, anchor="center")
         ctk.CTkLabel(title, text="<",
                      font=("Segoe UI", 40, "bold"), text_color=CYAN).pack(side="left")
-        ctk.CTkLabel(title, text="PDF",
+        ctk.CTkLabel(title, text=APP_WORD,
                      font=("Segoe UI", 40, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(title, text=">",
                      font=("Segoe UI", 40, "bold"), text_color=CYAN).pack(side="left")
@@ -453,7 +457,7 @@ class App(ctk.CTk):
             self._splash_video_label.image = self._splash_photo
         except Exception:
             self._splash_video_label.configure(
-                text="<PDF>",
+                text=APP_BRAND,
                 fg=CYAN,
                 bg=CARD,
                 font=("Segoe UI", 26, "bold"),
@@ -475,7 +479,7 @@ class App(ctk.CTk):
         self._clear()
 
         # ── Header bar ──
-        bar = ctk.CTkFrame(self, fg_color=BG, height=54, corner_radius=0)
+        bar = ctk.CTkFrame(self, fg_color=self._blend_hex(BG, CARD, 0.18), height=58, corner_radius=0)
         bar.pack(fill="x")
         bar.pack_propagate(False)
 
@@ -496,23 +500,62 @@ class App(ctk.CTk):
             ctk.CTkLabel(badge, text="<>", font=("JetBrains Mono", 11, "bold"),
                          text_color=CYAN).place(relx=0.5, rely=0.5, anchor="center")
 
-        # App name  <PDF>  with styled brackets
+        # App name  <PDFrr>  with styled brackets
         name_f = ctk.CTkFrame(bar, fg_color="transparent")
         name_f.place(x=56, rely=0.5, anchor="w")
         ctk.CTkLabel(name_f, text="<", font=("Segoe UI", 18, "bold"),
                      text_color=CYAN).pack(side="left")
-        ctk.CTkLabel(name_f, text="PDF", font=("Segoe UI", 18, "bold"),
+        ctk.CTkLabel(name_f, text=APP_WORD, font=("Segoe UI", 18, "bold"),
                      text_color=TEXT).pack(side="left")
         ctk.CTkLabel(name_f, text=">", font=("Segoe UI", 18, "bold"),
                      text_color=CYAN).pack(side="left")
 
-        # Folder path
-        folder_str = str(self._folder)
-        if len(folder_str) > 38:
-            folder_str = "…" + folder_str[-36:]
-        ctk.CTkLabel(bar, text=folder_str,
-                     font=("Segoe UI", 9), text_color=SUBTEXT
-                     ).place(relx=1.0, x=-46, rely=0.5, anchor="e")
+        # Workspace chip (less URL/browser-like than full path text)
+        folder_name = self._folder.name or str(self._folder)
+        chip = ctk.CTkFrame(
+            bar,
+            fg_color=self._blend_hex(CARD, BG, 0.22),
+            height=28,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER,
+        )
+        chip.place(relx=1.0, x=-48, rely=0.5, anchor="e")
+        ctk.CTkLabel(
+            chip,
+            text=f"{self._trunc(folder_name, 16)}  ·  {len(self._pdfs)} PDF{'s' if len(self._pdfs) != 1 else ''}",
+            font=("Segoe UI", 9),
+            text_color=SUBTEXT,
+        ).pack(padx=10, pady=3)
+
+        # Mode-aware top tab for selection/options
+        self._top_tab_btn = ctk.CTkButton(
+            bar,
+            text="",
+            width=128,
+            height=30,
+            corner_radius=14,
+            fg_color=self._blend_hex(BG, CARD, 0.12),
+            hover_color=self._blend_hex(BG, CARD, 0.28),
+            text_color=CYAN,
+            border_width=1,
+            border_color=self._blend_hex(CYAN, BORDER, 0.65),
+            font=("Segoe UI", 10, "bold"),
+            command=self._edit_split,
+        )
+        self._top_tab_btn.place(relx=0.55, rely=0.5, anchor="center")
+        self._attach_hover_effect(
+            self._top_tab_btn,
+            base_width=128,
+            base_height=30,
+            base_rely=0.5,
+            hover_width=136,
+            hover_height=33,
+            hover_rely=0.494,
+            border_base=self._blend_hex(CYAN, BORDER, 0.65),
+            border_hover=CYAN,
+        )
+        self._update_top_tab()
 
         # Refresh
         ctk.CTkButton(
@@ -531,29 +574,51 @@ class App(ctk.CTk):
         body.pack(fill="both", expand=True)
 
         self._left_frame = ctk.CTkFrame(
-            body, corner_radius=0,
+            body, corner_radius=28,
             fg_color=SPLIT_BG if self._mode == "split" else DIM2,
             border_width=1,
             border_color=self._blend_hex(CYAN if self._mode == "split" else BORDER, BORDER, 0.55),
         )
-        self._left_frame.place(relx=0, rely=0, relwidth=0.5, relheight=1.0)
+        self._left_frame.place(relx=0.02, rely=0.5, relwidth=0.46, relheight=0.96, anchor="w")
 
         self._right_frame = ctk.CTkFrame(
-            body, corner_radius=0,
+            body, corner_radius=28,
             fg_color=MERGE_BG if self._mode == "merge" else DIM2,
             border_width=1,
             border_color=self._blend_hex(AMBER if self._mode == "merge" else BORDER, BORDER, 0.55),
         )
-        self._right_frame.place(relx=0.5, rely=0, relwidth=0.5, relheight=1.0)
+        self._right_frame.place(relx=0.52, rely=0.5, relwidth=0.46, relheight=0.96, anchor="w")
 
-        # Thin centre divider line
-        ctk.CTkFrame(body, fg_color=BORDER, width=1, corner_radius=0
-                     ).place(relx=0.5, rely=0, relwidth=0, relheight=1.0,
-                             anchor="n", x=0)
+        # Soft centre seam glow
+        ctk.CTkFrame(
+            body,
+            fg_color=self._blend_hex(BORDER, BG, 0.25),
+            width=14,
+            corner_radius=7,
+        ).place(relx=0.5, rely=0.5, relheight=0.72, anchor="center")
 
         # ── Centre toggle  < | > ──
-        tog = ctk.CTkFrame(body, fg_color=BG, width=64, height=32,
-                           corner_radius=16, border_width=1, border_color=BORDER)
+        tog_outer = ctk.CTkFrame(
+            body,
+            fg_color=self._blend_hex(CARD, BG, 0.34),
+            width=84,
+            height=42,
+            corner_radius=21,
+            border_width=1,
+            border_color=self._blend_hex(BORDER, BG, 0.2),
+        )
+        tog_outer.place(relx=0.5, rely=0.5, anchor="center")
+        tog_outer.pack_propagate(False)
+
+        tog = ctk.CTkFrame(
+            tog_outer,
+            fg_color=self._blend_hex(BG, CARD, 0.15),
+            width=74,
+            height=34,
+            corner_radius=17,
+            border_width=1,
+            border_color=self._blend_hex(CYAN if self._mode == "split" else AMBER, BORDER, 0.75),
+        )
         tog.place(relx=0.5, rely=0.5, anchor="center")
         tog.pack_propagate(False)
 
@@ -578,11 +643,24 @@ class App(ctk.CTk):
         self._toggle_left = lt
         self._toggle_right = rt
 
+        self._attach_hover_effect(
+            tog,
+            base_width=74,
+            base_height=34,
+            base_rely=0.5,
+            hover_width=80,
+            hover_height=38,
+            hover_rely=0.494,
+            border_base=self._blend_hex(CYAN if self._mode == "split" else AMBER, BORDER, 0.75),
+            border_hover=CYAN if self._mode == "split" else AMBER,
+            bind_events=False,
+        )
+
         # Make whole toggle clickable
-        for w in [tog, tog_inner, lt, div, rt]:
+        for w in [tog_outer, tog, tog_inner, lt, div, rt]:
             w.bind("<Button-1>", lambda e: self._toggle_mode())
-            w.bind("<Enter>",    lambda e: tog.configure(border_color=CYAN))
-            w.bind("<Leave>",    lambda e: tog.configure(border_color=BORDER))
+            w.bind("<Enter>",    lambda e: self._set_hover_target(tog, 1.0))
+            w.bind("<Leave>",    lambda e: self._set_hover_target(tog, 0.0))
             w.configure(cursor="hand2")
 
         self._populate_halves()
@@ -683,30 +761,51 @@ class App(ctk.CTk):
                          ).place(relx=0.5, rely=0.50, anchor="center")
 
         if active and single:
-            ctk.CTkButton(
+            go_btn = ctk.CTkButton(
                 panel, text="GO",
                 font=("Segoe UI", 16, "bold"),
                 height=44, width=132, corner_radius=14,
                 fg_color=CYAN, hover_color=CYAN_HOV, text_color="#001A18",
                 border_width=1, border_color=self._blend_hex(CYAN, BORDER, 0.6),
                 command=self._run_split,
-            ).place(relx=0.5, rely=0.75, anchor="center")
+            )
+            go_btn.place(relx=0.5, rely=0.75, anchor="center")
+            self._attach_hover_effect(
+                go_btn,
+                base_width=132,
+                base_height=44,
+                base_rely=0.75,
+                hover_width=154,
+                hover_height=54,
+                hover_rely=0.736,
+                border_base=self._blend_hex(CYAN, BORDER, 0.6),
+                border_hover=CYAN,
+            )
 
-            label = "Change  /  Edit" if len(self._pdfs) > 1 else "Edit"
-            ctk.CTkButton(
-                panel, text=label,
-                font=("Segoe UI", 10, "bold"), height=26, width=120, corner_radius=8,
-                fg_color="transparent", hover_color=DIM, text_color=sc,
-                command=self._edit_split,
-            ).place(relx=0.5, rely=0.87, anchor="center")
+            ctk.CTkLabel(
+                panel,
+                text="Use top tab to select pages/options",
+                font=("Segoe UI", 9, "bold"),
+                text_color=self._blend_hex(CYAN, SUBTEXT, 0.38),
+            ).place(relx=0.5, rely=0.88, anchor="center")
 
         elif active:
-            ctk.CTkButton(
+            browse_btn = ctk.CTkButton(
                 panel, text="Browse…",
                 font=("Segoe UI", 12), height=36, width=120, corner_radius=10,
                 fg_color=DIM, hover_color=CARD_HOV, text_color=CYAN,
                 command=self._pick_split_pdf,
-            ).place(relx=0.5, rely=0.75, anchor="center")
+            )
+            browse_btn.place(relx=0.5, rely=0.75, anchor="center")
+            self._attach_hover_effect(
+                browse_btn,
+                base_width=120,
+                base_height=36,
+                base_rely=0.75,
+                hover_width=126,
+                hover_height=39,
+                hover_rely=0.744,
+            )
 
     # ── Merge half ────────────────────────────────────────────────────────────
 
@@ -774,21 +873,33 @@ class App(ctk.CTk):
                          ).place(relx=0.5, rely=0.50, anchor="center")
 
         if active and count >= 2:
-            ctk.CTkButton(
+            go_btn = ctk.CTkButton(
                 panel, text="GO",
                 font=("Segoe UI", 16, "bold"),
                 height=44, width=132, corner_radius=14,
                 fg_color=AMBER, hover_color=AMBER_HOV, text_color="#1A0E00",
                 border_width=1, border_color=self._blend_hex(AMBER, BORDER, 0.6),
                 command=self._run_merge,
-            ).place(relx=0.5, rely=0.75, anchor="center")
+            )
+            go_btn.place(relx=0.5, rely=0.75, anchor="center")
+            self._attach_hover_effect(
+                go_btn,
+                base_width=132,
+                base_height=44,
+                base_rely=0.75,
+                hover_width=154,
+                hover_height=54,
+                hover_rely=0.736,
+                border_base=self._blend_hex(AMBER, BORDER, 0.6),
+                border_hover=AMBER,
+            )
 
-            ctk.CTkButton(
-                panel, text="Edit",
-                font=("Segoe UI", 10, "bold"), height=26, width=120, corner_radius=8,
-                fg_color="transparent", hover_color=DIM, text_color=sc,
-                command=self._edit_merge,
-            ).place(relx=0.5, rely=0.87, anchor="center")
+            ctk.CTkLabel(
+                panel,
+                text="Use top tab to select file order",
+                font=("Segoe UI", 9, "bold"),
+                text_color=self._blend_hex(AMBER, SUBTEXT, 0.38),
+            ).place(relx=0.5, rely=0.88, anchor="center")
 
     # ── Toggle ────────────────────────────────────────────────────────────────
 
@@ -796,6 +907,7 @@ class App(ctk.CTk):
         old_mode = self._mode
         self._mode = "merge" if self._mode == "split" else "split"
         self._set_toggle_colors()
+        self._update_top_tab()
         self._animate_mode_panels(old_mode, self._mode)
 
     def _set_toggle_colors(self):
@@ -807,6 +919,30 @@ class App(ctk.CTk):
             self._toggle_right.configure(
                 text_color=AMBER if self._mode == "merge" else SUBTEXT
             )
+
+    def _update_top_tab(self):
+        if self._top_tab_btn is None:
+            return
+        if self._mode == "split":
+            accent = CYAN
+            self._top_tab_btn.configure(
+                text="Select Pages",
+                text_color=accent,
+                command=self._edit_split,
+                border_color=self._blend_hex(accent, BORDER, 0.65),
+            )
+        else:
+            accent = AMBER
+            self._top_tab_btn.configure(
+                text="Select Files",
+                text_color=accent,
+                command=self._edit_merge,
+                border_color=self._blend_hex(accent, BORDER, 0.65),
+            )
+        hover_fx = getattr(self._top_tab_btn, "_hover_fx", None)
+        if hover_fx:
+            hover_fx["border_base"] = self._blend_hex(accent, BORDER, 0.65)
+            hover_fx["border_hover"] = accent
 
     def _animate_mode_panels(self, from_mode: str, to_mode: str):
         if self._left_frame is None or self._right_frame is None:
@@ -849,6 +985,86 @@ class App(ctk.CTk):
 
         step()
 
+    def _attach_hover_effect(
+        self,
+        widget,
+        *,
+        base_width: int,
+        base_height: int,
+        base_rely: float,
+        hover_width: int,
+        hover_height: int,
+        hover_rely: float,
+        border_base: str | None = None,
+        border_hover: str | None = None,
+        bind_events: bool = True,
+    ):
+        widget._hover_fx = {
+            "value": 0.0,
+            "target": 0.0,
+            "after": None,
+            "base_width": base_width,
+            "base_height": base_height,
+            "base_rely": base_rely,
+            "hover_width": hover_width,
+            "hover_height": hover_height,
+            "hover_rely": hover_rely,
+            "border_base": border_base,
+            "border_hover": border_hover,
+        }
+        if border_base and border_hover:
+            try:
+                widget.configure(border_color=border_base)
+            except tk.TclError:
+                return
+        if bind_events:
+            widget.bind("<Enter>", lambda e, w=widget: self._set_hover_target(w, 1.0), add="+")
+            widget.bind("<Leave>", lambda e, w=widget: self._set_hover_target(w, 0.0), add="+")
+
+    def _set_hover_target(self, widget, target: float):
+        hover_fx = getattr(widget, "_hover_fx", None)
+        if hover_fx is None:
+            return
+        hover_fx["target"] = max(0.0, min(1.0, target))
+        if hover_fx["after"] is None:
+            self._step_hover_effect(widget)
+
+    def _step_hover_effect(self, widget):
+        hover_fx = getattr(widget, "_hover_fx", None)
+        if hover_fx is None:
+            return
+
+        value = hover_fx["value"]
+        target = hover_fx["target"]
+        value += (target - value) * 0.35
+        if abs(target - value) < 0.01:
+            value = target
+        hover_fx["value"] = value
+
+        width = round(hover_fx["base_width"] + (hover_fx["hover_width"] - hover_fx["base_width"]) * value)
+        height = round(hover_fx["base_height"] + (hover_fx["hover_height"] - hover_fx["base_height"]) * value)
+        rely = hover_fx["base_rely"] + (hover_fx["hover_rely"] - hover_fx["base_rely"]) * value
+
+        try:
+            widget.configure(width=width, height=height)
+            widget.place_configure(rely=rely)
+            if hover_fx["border_base"] and hover_fx["border_hover"]:
+                widget.configure(
+                    border_color=self._blend_hex(
+                        hover_fx["border_base"],
+                        hover_fx["border_hover"],
+                        value,
+                    )
+                )
+        except tk.TclError:
+            hover_fx["after"] = None
+            return
+
+        if value == target:
+            hover_fx["after"] = None
+            return
+        hover_fx["after"] = self.after(16, lambda: self._step_hover_effect(widget))
+
     # ── Edit dialogs ──────────────────────────────────────────────────────────
 
     def _edit_split(self):
@@ -856,7 +1072,7 @@ class App(ctk.CTk):
         w = 420
         h = 560 if multi else 410
         d = ctk.CTkToplevel(self)
-        d.title("<PDF> — Split Options")
+        d.title(f"{APP_BRAND} — Split Options")
         d.geometry(f"{w}x{h}")
         d.configure(fg_color=BG)
         d.transient(self)
@@ -948,7 +1164,7 @@ class App(ctk.CTk):
         if not self._pdfs:
             return
         d = ctk.CTkToplevel(self)
-        d.title("<PDF> — Merge Order")
+        d.title(f"{APP_BRAND} — Merge Order")
         d.geometry("400x500")
         d.configure(fg_color=BG)
         d.grab_set()
@@ -1118,7 +1334,7 @@ class App(ctk.CTk):
         name_f.place(x=56, rely=0.5, anchor="w")
         ctk.CTkLabel(name_f, text="<", font=("Segoe UI", 18, "bold"),
                      text_color=CYAN).pack(side="left")
-        ctk.CTkLabel(name_f, text="PDF", font=("Segoe UI", 18, "bold"),
+        ctk.CTkLabel(name_f, text=APP_WORD, font=("Segoe UI", 18, "bold"),
                      text_color=TEXT).pack(side="left")
         ctk.CTkLabel(name_f, text=">", font=("Segoe UI", 18, "bold"),
                      text_color=CYAN).pack(side="left")
