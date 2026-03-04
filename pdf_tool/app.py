@@ -50,6 +50,19 @@ def scan_folder(folder: Path) -> list[Path]:
                   if p.is_file() and p.suffix.lower() == '.pdf')
 
 
+def safe_file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return -1
+
+
+def pick_largest_pdf(pdfs: list[Path]) -> Path | None:
+    if not pdfs:
+        return None
+    return max(pdfs, key=lambda p: (safe_file_size(p), p.name.lower()))
+
+
 # ── PDF logic ─────────────────────────────────────────────────────────────────
 def sanitize(name: str) -> str:
     name = name.strip()
@@ -211,12 +224,12 @@ class App(ctk.CTk):
 
         self._use_titles  = False
         self._titles_auto = False
-        if self._pdfs:
-            self._use_titles  = detect_uses_titles(self._pdfs[0])
+        self._split_target = pick_largest_pdf(self._pdfs)
+        if self._split_target:
+            self._use_titles  = detect_uses_titles(self._split_target)
             self._titles_auto = True
 
         self._merge_files  = list(self._pdfs)
-        self._split_target = None
 
         self._left_frame = None
         self._right_frame = None
@@ -273,13 +286,19 @@ class App(ctk.CTk):
         except tk.TclError:
             pass
 
+    def _current_split_pdf(self) -> Path | None:
+        if self._split_target in self._pdfs:
+            return self._split_target
+        self._split_target = pick_largest_pdf(self._pdfs)
+        return self._split_target
+
     def _refresh(self):
         self._pdfs         = scan_folder(self._folder)
         self._merge_files  = list(self._pdfs)
-        self._split_target = None
+        self._split_target = pick_largest_pdf(self._pdfs)
         self._mode         = "merge" if len(self._pdfs) >= 2 else "split"
-        if self._pdfs:
-            self._use_titles  = detect_uses_titles(self._pdfs[0])
+        if self._split_target:
+            self._use_titles  = detect_uses_titles(self._split_target)
             self._titles_auto = True
         self._build_home()
 
@@ -513,12 +532,18 @@ class App(ctk.CTk):
 
         self._left_frame = ctk.CTkFrame(
             body, corner_radius=0,
-            fg_color=SPLIT_BG if self._mode == "split" else DIM2)
+            fg_color=SPLIT_BG if self._mode == "split" else DIM2,
+            border_width=1,
+            border_color=self._blend_hex(CYAN if self._mode == "split" else BORDER, BORDER, 0.55),
+        )
         self._left_frame.place(relx=0, rely=0, relwidth=0.5, relheight=1.0)
 
         self._right_frame = ctk.CTkFrame(
             body, corner_radius=0,
-            fg_color=MERGE_BG if self._mode == "merge" else DIM2)
+            fg_color=MERGE_BG if self._mode == "merge" else DIM2,
+            border_width=1,
+            border_color=self._blend_hex(AMBER if self._mode == "merge" else BORDER, BORDER, 0.55),
+        )
         self._right_frame.place(relx=0.5, rely=0, relwidth=0.5, relheight=1.0)
 
         # Thin centre divider line
@@ -573,7 +598,7 @@ class App(ctk.CTk):
     # ── Split half ────────────────────────────────────────────────────────────
 
     def _draw_split_half(self, parent, active: bool):
-        single = self._split_target or (self._pdfs[0] if self._pdfs else None)
+        single = self._current_split_pdf()
         page_count = None
         if single:
             try:
@@ -581,68 +606,103 @@ class App(ctk.CTk):
             except Exception:
                 pass
 
-        ac  = CYAN    if active else SUBTEXT
-        tc  = TEXT    if active else DIM
-        sc  = CYAN    if active else DIM
-        ic  = CYAN_DIM if active else DIM2
+        panel = ctk.CTkFrame(
+            parent,
+            fg_color=self._blend_hex(SPLIT_BG if active else DIM2, CARD, 0.35),
+            corner_radius=24,
+            border_width=1,
+            border_color=self._blend_hex(CYAN if active else BORDER, BORDER, 0.45),
+        )
+        panel.place(relx=0.5, rely=0.5, relwidth=0.88, relheight=0.92, anchor="center")
+
+        ac = CYAN if active else "#55707D"
+        tc = TEXT if active else "#5E7280"
+        sc = CYAN if active else "#4A5D68"
+        ic = self._blend_hex(CYAN_DIM, BG, 0.12) if active else self._blend_hex(DIM2, BG, 0.28)
 
         # ── < label ──
-        ctk.CTkLabel(parent, text="<",
-                     font=("Segoe UI", 28, "bold"), text_color=ac,
+        ctk.CTkLabel(panel, text="<",
+                     font=("Segoe UI", 34, "bold"), text_color=ac,
                      ).place(relx=0.5, rely=0.09, anchor="center")
 
-        ctk.CTkLabel(parent, text=self._tracked_text("SPLIT"),
-                     font=("Segoe UI", 8, "bold"), text_color=sc,
+        ctk.CTkLabel(panel, text=self._tracked_text("SPLIT"),
+                     font=("Segoe UI", 10, "bold"), text_color=sc,
                      ).place(relx=0.5, rely=0.17, anchor="center")
 
+        if active:
+            ctk.CTkFrame(
+                panel,
+                fg_color=self._blend_hex(CYAN_DIM, CYAN, 0.18),
+                width=102,
+                height=102,
+                corner_radius=30,
+            ).place(relx=0.5, rely=0.30, anchor="center")
+
         # Icon box
-        ico_f = ctk.CTkFrame(parent, fg_color=ic, width=56, height=56, corner_radius=14)
+        ico_f = ctk.CTkFrame(
+            panel,
+            fg_color=ic,
+            width=64,
+            height=64,
+            corner_radius=16,
+            border_width=1,
+            border_color=self._blend_hex(CYAN, BORDER, 0.55) if active else BORDER,
+        )
         ico_f.place(relx=0.5, rely=0.30, anchor="center")
         ctk.CTkLabel(ico_f, text="✂",
-                     font=("Segoe UI Emoji", 24),
+                     font=("Segoe UI Emoji", 26),
                      text_color=ac).place(relx=0.5, rely=0.5, anchor="center")
 
         if single:
-            ctk.CTkLabel(parent, text=self._trunc(single.name, 17),
-                         font=("Segoe UI", 11, "bold"), text_color=tc,
+            ctk.CTkLabel(panel, text=self._trunc(single.name, 22),
+                         font=("Segoe UI", 12, "bold"), text_color=tc,
                          ).place(relx=0.5, rely=0.46, anchor="center")
 
             detail = f"→  {page_count} files" if page_count else "→  ? files"
-            ctk.CTkLabel(parent, text=detail,
+            ctk.CTkLabel(panel, text=detail,
                          font=("Segoe UI", 10), text_color=sc,
                          ).place(relx=0.5, rely=0.54, anchor="center")
 
-            tag = ("📐 Titles" if self._use_titles else "🔢 Sequential")
+            tag = ("Drawing Titles" if self._use_titles else "Sequential")
             if self._titles_auto:
                 tag += "  (auto)"
-            ctk.CTkLabel(parent, text=tag,
+            ctk.CTkLabel(panel, text=tag,
                          font=("Segoe UI", 9), text_color=sc,
                          ).place(relx=0.5, rely=0.61, anchor="center")
+
+            if len(self._pdfs) > 1 and single == pick_largest_pdf(self._pdfs):
+                ctk.CTkLabel(
+                    panel,
+                    text="Default: largest PDF by size",
+                    font=("Segoe UI", 9),
+                    text_color=self._blend_hex(CYAN, SUBTEXT, 0.35),
+                ).place(relx=0.5, rely=0.66, anchor="center")
         else:
-            ctk.CTkLabel(parent, text="No PDF found",
+            ctk.CTkLabel(panel, text="No PDF found",
                          font=("Segoe UI", 11), text_color=tc,
                          ).place(relx=0.5, rely=0.50, anchor="center")
 
         if active and single:
             ctk.CTkButton(
-                parent, text="GO",
+                panel, text="GO",
                 font=("Segoe UI", 16, "bold"),
-                height=42, width=120, corner_radius=12,
+                height=44, width=132, corner_radius=14,
                 fg_color=CYAN, hover_color=CYAN_HOV, text_color="#001A18",
+                border_width=1, border_color=self._blend_hex(CYAN, BORDER, 0.6),
                 command=self._run_split,
             ).place(relx=0.5, rely=0.75, anchor="center")
 
             label = "Change  /  Edit" if len(self._pdfs) > 1 else "Edit"
             ctk.CTkButton(
-                parent, text=label,
-                font=("Segoe UI", 10), height=24, width=110, corner_radius=6,
+                panel, text=label,
+                font=("Segoe UI", 10, "bold"), height=26, width=120, corner_radius=8,
                 fg_color="transparent", hover_color=DIM, text_color=sc,
                 command=self._edit_split,
             ).place(relx=0.5, rely=0.87, anchor="center")
 
         elif active:
             ctk.CTkButton(
-                parent, text="Browse…",
+                panel, text="Browse…",
                 font=("Segoe UI", 12), height=36, width=120, corner_radius=10,
                 fg_color=DIM, hover_color=CARD_HOV, text_color=CYAN,
                 command=self._pick_split_pdf,
@@ -652,53 +712,80 @@ class App(ctk.CTk):
 
     def _draw_merge_half(self, parent, active: bool):
         count = len(self._merge_files)
-        ac = AMBER   if active else SUBTEXT
-        tc = TEXT    if active else DIM
-        sc = AMBER   if active else DIM
-        ic = AMBER_DIM if active else DIM2
+        panel = ctk.CTkFrame(
+            parent,
+            fg_color=self._blend_hex(MERGE_BG if active else DIM2, CARD, 0.35),
+            corner_radius=24,
+            border_width=1,
+            border_color=self._blend_hex(AMBER if active else BORDER, BORDER, 0.45),
+        )
+        panel.place(relx=0.5, rely=0.5, relwidth=0.88, relheight=0.92, anchor="center")
 
-        ctk.CTkLabel(parent, text=">",
-                     font=("Segoe UI", 28, "bold"), text_color=ac,
+        ac = AMBER if active else "#6B6A62"
+        tc = TEXT if active else "#726A60"
+        sc = AMBER if active else "#5E584E"
+        ic = self._blend_hex(AMBER_DIM, BG, 0.12) if active else self._blend_hex(DIM2, BG, 0.28)
+
+        ctk.CTkLabel(panel, text=">",
+                     font=("Segoe UI", 34, "bold"), text_color=ac,
                      ).place(relx=0.5, rely=0.09, anchor="center")
 
-        ctk.CTkLabel(parent, text=self._tracked_text("MERGE"),
-                     font=("Segoe UI", 8, "bold"), text_color=sc,
+        ctk.CTkLabel(panel, text=self._tracked_text("MERGE"),
+                     font=("Segoe UI", 10, "bold"), text_color=sc,
                      ).place(relx=0.5, rely=0.17, anchor="center")
 
-        ico_f = ctk.CTkFrame(parent, fg_color=ic, width=56, height=56, corner_radius=14)
+        if active:
+            ctk.CTkFrame(
+                panel,
+                fg_color=self._blend_hex(AMBER_DIM, AMBER, 0.18),
+                width=102,
+                height=102,
+                corner_radius=30,
+            ).place(relx=0.5, rely=0.30, anchor="center")
+
+        ico_f = ctk.CTkFrame(
+            panel,
+            fg_color=ic,
+            width=64,
+            height=64,
+            corner_radius=16,
+            border_width=1,
+            border_color=self._blend_hex(AMBER, BORDER, 0.55) if active else BORDER,
+        )
         ico_f.place(relx=0.5, rely=0.30, anchor="center")
         ctk.CTkLabel(ico_f, text="⊞",
-                     font=("Segoe UI Emoji", 24),
+                     font=("Segoe UI Emoji", 26),
                      text_color=ac).place(relx=0.5, rely=0.5, anchor="center")
 
         if count >= 2:
-            ctk.CTkLabel(parent, text=f"{count} PDFs",
-                         font=("Segoe UI", 11, "bold"), text_color=tc,
+            ctk.CTkLabel(panel, text=f"{count} PDFs",
+                         font=("Segoe UI", 12, "bold"), text_color=tc,
                          ).place(relx=0.5, rely=0.46, anchor="center")
-            ctk.CTkLabel(parent, text="→  merged.pdf",
+            ctk.CTkLabel(panel, text="→  merged.pdf",
                          font=("Segoe UI", 10), text_color=sc,
                          ).place(relx=0.5, rely=0.54, anchor="center")
         elif count == 1:
-            ctk.CTkLabel(parent, text="Need 2+ PDFs",
+            ctk.CTkLabel(panel, text="Need 2+ PDFs",
                          font=("Segoe UI", 11), text_color=tc,
                          ).place(relx=0.5, rely=0.50, anchor="center")
         else:
-            ctk.CTkLabel(parent, text="No PDFs found",
+            ctk.CTkLabel(panel, text="No PDFs found",
                          font=("Segoe UI", 11), text_color=tc,
                          ).place(relx=0.5, rely=0.50, anchor="center")
 
         if active and count >= 2:
             ctk.CTkButton(
-                parent, text="GO",
+                panel, text="GO",
                 font=("Segoe UI", 16, "bold"),
-                height=42, width=120, corner_radius=12,
+                height=44, width=132, corner_radius=14,
                 fg_color=AMBER, hover_color=AMBER_HOV, text_color="#1A0E00",
+                border_width=1, border_color=self._blend_hex(AMBER, BORDER, 0.6),
                 command=self._run_merge,
             ).place(relx=0.5, rely=0.75, anchor="center")
 
             ctk.CTkButton(
-                parent, text="Edit",
-                font=("Segoe UI", 10), height=24, width=110, corner_radius=6,
+                panel, text="Edit",
+                font=("Segoe UI", 10, "bold"), height=26, width=120, corner_radius=8,
                 fg_color="transparent", hover_color=DIM, text_color=sc,
                 command=self._edit_merge,
             ).place(relx=0.5, rely=0.87, anchor="center")
@@ -737,16 +824,22 @@ class App(ctk.CTk):
         left_to = SPLIT_BG if to_mode == "split" else DIM2
         right_from = MERGE_BG if from_mode == "merge" else DIM2
         right_to = MERGE_BG if to_mode == "merge" else DIM2
+        left_border_from = self._blend_hex(CYAN if from_mode == "split" else BORDER, BORDER, 0.55)
+        left_border_to = self._blend_hex(CYAN if to_mode == "split" else BORDER, BORDER, 0.55)
+        right_border_from = self._blend_hex(AMBER if from_mode == "merge" else BORDER, BORDER, 0.55)
+        right_border_to = self._blend_hex(AMBER if to_mode == "merge" else BORDER, BORDER, 0.55)
         steps = 8
         delay_ms = 16
 
         def step(i: int = 0):
             t = i / steps
             self._left_frame.configure(
-                fg_color=self._blend_hex(left_from, left_to, t)
+                fg_color=self._blend_hex(left_from, left_to, t),
+                border_color=self._blend_hex(left_border_from, left_border_to, t),
             )
             self._right_frame.configure(
-                fg_color=self._blend_hex(right_from, right_to, t)
+                fg_color=self._blend_hex(right_from, right_to, t),
+                border_color=self._blend_hex(right_border_from, right_border_to, t),
             )
             if i < steps:
                 self._mode_anim_after = self.after(delay_ms, lambda: step(i + 1))
@@ -760,11 +853,13 @@ class App(ctk.CTk):
 
     def _edit_split(self):
         multi = len(self._pdfs) > 1
-        h = 310 if multi else 210
+        w = 420
+        h = 560 if multi else 410
         d = ctk.CTkToplevel(self)
         d.title("<PDF> — Split Options")
-        d.geometry(f"360x{h}")
+        d.geometry(f"{w}x{h}")
         d.configure(fg_color=BG)
+        d.transient(self)
         d.grab_set()
         d.resizable(False, False)
 
@@ -774,33 +869,51 @@ class App(ctk.CTk):
         except Exception:
             pass
 
+        self.update_idletasks()
+        x = self.winfo_x() + max(12, (self.winfo_width() - w) // 2)
+        y = self.winfo_y() + max(28, (self.winfo_height() - h) // 2)
+        d.geometry(f"{w}x{h}+{x}+{y}")
+
         ctk.CTkLabel(d, text="Split Options",
-                     font=("Segoe UI", 15, "bold"), text_color=TEXT).pack(pady=(18, 12))
+                     font=("Segoe UI", 16, "bold"), text_color=TEXT).pack(pady=(16, 8))
+
+        content = ctk.CTkScrollableFrame(
+            d,
+            fg_color="transparent",
+            corner_radius=0,
+            scrollbar_button_color=CARD_HOV,
+            scrollbar_button_hover_color=DIM,
+        )
+        content.pack(fill="both", expand=True, padx=16, pady=(0, 8))
 
         if multi:
-            ctk.CTkLabel(d, text="Which PDF?",
+            ctk.CTkLabel(content, text="Which PDF to split?",
                          font=("Segoe UI", 10), text_color=SUBTEXT).pack(anchor="w", padx=24)
-            cur = self._split_target or self._pdfs[0]
+            cur = self._current_split_pdf() or self._pdfs[0]
             pdf_var = tk.StringVar(value=str(cur))
-            sf = ctk.CTkScrollableFrame(d, fg_color=CARD, corner_radius=8, height=90)
+            sf = ctk.CTkScrollableFrame(content, fg_color=CARD, corner_radius=10, height=210)
             sf.pack(fill="x", padx=24, pady=(4, 14))
-            for p in self._pdfs:
+            ordered = sorted(self._pdfs, key=lambda p: (-safe_file_size(p), p.name.lower()))
+            for p in ordered:
+                label = f"{self._trunc(p.name, 26)}  ·  {self._fmt_size(safe_file_size(p))}"
                 ctk.CTkRadioButton(
-                    sf, text=p.name[:34],
+                    sf, text=label,
                     variable=pdf_var, value=str(p),
                     font=("Segoe UI", 11), text_color=TEXT,
                     radiobutton_width=16, radiobutton_height=16,
                     fg_color=CYAN, border_color=BORDER,
                 ).pack(anchor="w", pady=2, padx=6)
+            ctk.CTkLabel(content, text="Auto default uses the largest PDF in this folder.",
+                         font=("Segoe UI", 9), text_color=SUBTEXT).pack(anchor="w", padx=24, pady=(0, 14))
 
-        ctk.CTkLabel(d, text="File naming",
+        ctk.CTkLabel(content, text="File naming",
                      font=("Segoe UI", 10), text_color=SUBTEXT).pack(anchor="w", padx=24)
         name_var = tk.StringVar(value="titles" if self._use_titles else "seq")
 
-        for val, lbl in [("seq", "🔢  Sequential  (doc_01.pdf, doc_02.pdf…)"),
-                         ("titles", "📐  Drawing titles  (reads title block)")]:
+        for val, lbl in [("seq", "Sequential (doc_01.pdf, doc_02.pdf…)"),
+                         ("titles", "Drawing titles (from title block)")]:
             ctk.CTkRadioButton(
-                d, text=lbl, variable=name_var, value=val,
+                content, text=lbl, variable=name_var, value=val,
                 font=("Segoe UI", 11), text_color=TEXT,
                 radiobutton_width=16, radiobutton_height=16,
                 fg_color=CYAN, border_color=BORDER,
@@ -809,19 +922,27 @@ class App(ctk.CTk):
         def apply():
             if multi:
                 self._split_target = Path(pdf_var.get())
-                self._use_titles   = detect_uses_titles(self._split_target)
-                self._titles_auto  = True
+            else:
+                self._split_target = self._current_split_pdf()
             self._use_titles  = (name_var.get() == "titles")
             self._titles_auto = False
             d.destroy()
             self._populate_halves()
 
+        actions = ctk.CTkFrame(d, fg_color="transparent")
+        actions.pack(fill="x", padx=16, pady=(0, 14))
         ctk.CTkButton(
-            d, text="Apply", height=38, corner_radius=10,
+            actions, text="Cancel", height=38, width=120, corner_radius=10,
+            fg_color=DIM2, hover_color=DIM, text_color=TEXT,
+            font=("Segoe UI", 12, "bold"),
+            command=d.destroy,
+        ).pack(side="left")
+        ctk.CTkButton(
+            actions, text="Apply", height=38, corner_radius=10,
             fg_color=CYAN, hover_color=CYAN_HOV, text_color="#001A18",
             font=("Segoe UI", 13, "bold"),
             command=apply,
-        ).pack(pady=(14, 0), padx=24, fill="x")
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
 
     def _edit_merge(self):
         if not self._pdfs:
@@ -910,7 +1031,7 @@ class App(ctk.CTk):
         if p:
             self._pdfs         = [Path(p)]
             self._merge_files  = []
-            self._split_target = None
+            self._split_target = Path(p)
             self._mode         = "split"
             self._use_titles   = detect_uses_titles(self._pdfs[0])
             self._titles_auto  = True
@@ -921,7 +1042,9 @@ class App(ctk.CTk):
     def _run_split(self):
         if not self._pdfs:
             return
-        pdf = self._split_target or self._pdfs[0]
+        pdf = self._current_split_pdf()
+        if pdf is None:
+            return
         out_dir = self._folder / pdf.stem
         self._build_progress("Splitting", CYAN)
 
@@ -1102,6 +1225,18 @@ class App(ctk.CTk):
         draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
         rgba.putalpha(mask)
         return rgba
+
+    @staticmethod
+    def _fmt_size(size_bytes: int) -> str:
+        if size_bytes < 0:
+            return "?"
+        units = ["B", "KB", "MB", "GB"]
+        value = float(size_bytes)
+        idx = 0
+        while value >= 1024 and idx < len(units) - 1:
+            value /= 1024
+            idx += 1
+        return f"{value:.1f} {units[idx]}" if idx > 0 else f"{int(value)} B"
 
     @staticmethod
     def _blend_hex(color_a: str, color_b: str, t: float) -> str:
