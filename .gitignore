@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# PyInstaller outputs (keep spec, ignore build artifacts)
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# VS Code state
+.vscode/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large media files in root (AI-generated assets)
+*.mp4
+ChatGPT Image*.png
+ChatGPT Image*.ico
+ChatGPT Image*.webp
+
+# Node (future Electron phase)
+node_modules/
+.next/
+out/
