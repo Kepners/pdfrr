@@ -215,11 +215,32 @@ class App(ctk.CTk):
         self._merge_files  = list(self._pdfs)
         self._split_target = None
 
+        self._left_frame = None
+        self._right_frame = None
+        self._toggle_left = None
+        self._toggle_right = None
+        self._mode_anim_after = None
+        self._progress_anim_after = None
+        self._progress_value = 0.0
+        self._progress_target = 0.0
+
         self._build_home()
 
     # ── core helpers ──────────────────────────────────────────────────────────
 
     def _clear(self):
+        for handle_name in ("_mode_anim_after", "_progress_anim_after"):
+            handle = getattr(self, handle_name, None)
+            if handle is not None:
+                try:
+                    self.after_cancel(handle)
+                except Exception:
+                    pass
+                setattr(self, handle_name, None)
+        self._toggle_left = None
+        self._toggle_right = None
+        self._left_frame = None
+        self._right_frame = None
         for w in self.winfo_children():
             w.destroy()
 
@@ -227,6 +248,7 @@ class App(ctk.CTk):
         self._pdfs         = scan_folder(self._folder)
         self._merge_files  = list(self._pdfs)
         self._split_target = None
+        self._mode         = "merge" if len(self._pdfs) >= 2 else "split"
         if self._pdfs:
             self._use_titles  = detect_uses_titles(self._pdfs[0])
             self._titles_auto = True
@@ -332,6 +354,9 @@ class App(ctk.CTk):
                           text_color=AMBER if self._mode == "merge" else SUBTEXT)
         rt.pack(side="left", padx=(0, 4))
 
+        self._toggle_left = lt
+        self._toggle_right = rt
+
         # Make whole toggle clickable
         for w in [tog, tog_inner, lt, div, rt]:
             w.bind("<Button-1>", lambda e: self._toggle_mode())
@@ -370,9 +395,8 @@ class App(ctk.CTk):
                      font=("Segoe UI", 28, "bold"), text_color=ac,
                      ).place(relx=0.5, rely=0.09, anchor="center")
 
-        ctk.CTkLabel(parent, text="SPLIT",
+        ctk.CTkLabel(parent, text=self._tracked_text("SPLIT"),
                      font=("Segoe UI", 8, "bold"), text_color=sc,
-                     letter_spacing=3,
                      ).place(relx=0.5, rely=0.17, anchor="center")
 
         # Icon box
@@ -441,7 +465,7 @@ class App(ctk.CTk):
                      font=("Segoe UI", 28, "bold"), text_color=ac,
                      ).place(relx=0.5, rely=0.09, anchor="center")
 
-        ctk.CTkLabel(parent, text="MERGE",
+        ctk.CTkLabel(parent, text=self._tracked_text("MERGE"),
                      font=("Segoe UI", 8, "bold"), text_color=sc,
                      ).place(relx=0.5, rely=0.17, anchor="center")
 
@@ -486,14 +510,55 @@ class App(ctk.CTk):
     # ── Toggle ────────────────────────────────────────────────────────────────
 
     def _toggle_mode(self):
+        old_mode = self._mode
         self._mode = "merge" if self._mode == "split" else "split"
-        self._left_frame.configure(
-            fg_color=SPLIT_BG if self._mode == "split" else DIM2)
-        self._right_frame.configure(
-            fg_color=MERGE_BG if self._mode == "merge" else DIM2)
-        self._populate_halves()
-        # Redraw toggle bracket colours by rebuilding home
-        self._build_home()
+        self._set_toggle_colors()
+        self._animate_mode_panels(old_mode, self._mode)
+
+    def _set_toggle_colors(self):
+        if self._toggle_left is not None:
+            self._toggle_left.configure(
+                text_color=CYAN if self._mode == "split" else SUBTEXT
+            )
+        if self._toggle_right is not None:
+            self._toggle_right.configure(
+                text_color=AMBER if self._mode == "merge" else SUBTEXT
+            )
+
+    def _animate_mode_panels(self, from_mode: str, to_mode: str):
+        if self._left_frame is None or self._right_frame is None:
+            self._populate_halves()
+            return
+
+        if self._mode_anim_after is not None:
+            try:
+                self.after_cancel(self._mode_anim_after)
+            except Exception:
+                pass
+            self._mode_anim_after = None
+
+        left_from = SPLIT_BG if from_mode == "split" else DIM2
+        left_to = SPLIT_BG if to_mode == "split" else DIM2
+        right_from = MERGE_BG if from_mode == "merge" else DIM2
+        right_to = MERGE_BG if to_mode == "merge" else DIM2
+        steps = 8
+        delay_ms = 16
+
+        def step(i: int = 0):
+            t = i / steps
+            self._left_frame.configure(
+                fg_color=self._blend_hex(left_from, left_to, t)
+            )
+            self._right_frame.configure(
+                fg_color=self._blend_hex(right_from, right_to, t)
+            )
+            if i < steps:
+                self._mode_anim_after = self.after(delay_ms, lambda: step(i + 1))
+            else:
+                self._mode_anim_after = None
+                self._populate_halves()
+
+        step()
 
     # ── Edit dialogs ──────────────────────────────────────────────────────────
 
@@ -650,9 +715,10 @@ class App(ctk.CTk):
             self._pdfs         = [Path(p)]
             self._merge_files  = []
             self._split_target = None
+            self._mode         = "split"
             self._use_titles   = detect_uses_titles(self._pdfs[0])
             self._titles_auto  = True
-            self._populate_halves()
+            self._build_home()
 
     # ── Run ───────────────────────────────────────────────────────────────────
 
@@ -666,11 +732,12 @@ class App(ctk.CTk):
         def run():
             try:
                 do_split(pdf, out_dir, self._use_titles,
-                         self._set_progress, self._set_status)
+                         self._set_progress_threadsafe,
+                         self._set_status_threadsafe)
             except Exception as e:
-                self._set_status(f"Error: {e}")
+                self._set_status_threadsafe(f"Error: {e}")
             finally:
-                self._finish()
+                self._run_on_ui(self._finish)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -687,13 +754,26 @@ class App(ctk.CTk):
         def run():
             try:
                 do_merge(self._merge_files, out_file,
-                         self._set_progress, self._set_status)
+                         self._set_progress_threadsafe,
+                         self._set_status_threadsafe)
             except Exception as e:
-                self._set_status(f"Error: {e}")
+                self._set_status_threadsafe(f"Error: {e}")
             finally:
-                self._finish()
+                self._run_on_ui(self._finish)
 
         threading.Thread(target=run, daemon=True).start()
+
+    def _run_on_ui(self, fn, *args):
+        try:
+            self.after(0, lambda: fn(*args))
+        except tk.TclError:
+            pass
+
+    def _set_progress_threadsafe(self, v):
+        self._run_on_ui(self._set_progress, v)
+
+    def _set_status_threadsafe(self, msg):
+        self._run_on_ui(self._set_status, msg)
 
     # ── Progress ──────────────────────────────────────────────────────────────
 
@@ -743,6 +823,8 @@ class App(ctk.CTk):
             body, height=6, corner_radius=3,
             progress_color=color, fg_color=DIM2
         )
+        self._progress_value = 0.0
+        self._progress_target = 0.0
         self._progress.set(0)
         self._progress.pack(fill="x")
 
@@ -760,24 +842,72 @@ class App(ctk.CTk):
         self._done_btn.pack(pady=40, fill="x")
 
     def _set_progress(self, v):
-        self._progress.set(v)
-        self._pct_var.set(f"{int(v * 100)}%")
-        self.update_idletasks()
+        if not hasattr(self, "_progress"):
+            return
+        try:
+            target = max(0.0, min(1.0, float(v)))
+        except (TypeError, ValueError):
+            return
+        self._progress_target = target
+        if self._progress_anim_after is None:
+            self._animate_progress()
+
+    def _animate_progress(self):
+        delta = self._progress_target - self._progress_value
+        if abs(delta) < 0.004:
+            self._progress_value = self._progress_target
+        else:
+            self._progress_value += delta * 0.3
+
+        try:
+            self._progress.set(self._progress_value)
+            self._pct_var.set(f"{int(self._progress_value * 100)}%")
+            self.update_idletasks()
+        except tk.TclError:
+            self._progress_anim_after = None
+            return
+
+        if abs(self._progress_target - self._progress_value) <= 0.001:
+            self._progress_anim_after = None
+            return
+        self._progress_anim_after = self.after(16, self._animate_progress)
 
     def _set_status(self, msg):
-        self._status_var.set(msg)
-        self.update_idletasks()
+        try:
+            self._status_var.set(msg)
+            self.update_idletasks()
+        except tk.TclError:
+            pass
 
     def _finish(self):
-        self._done_btn.configure(
-            state="normal",
-            text="← Done",
-            text_color=TEXT,
-            fg_color=CYAN_DIM,
-            hover_color=DIM,
-        )
+        try:
+            self._done_btn.configure(
+                state="normal",
+                text="← Done",
+                text_color=TEXT,
+                fg_color=CYAN_DIM,
+                hover_color=DIM,
+            )
+        except tk.TclError:
+            pass
 
     # ── utils ─────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _tracked_text(word: str) -> str:
+        return " ".join(word)
+
+    @staticmethod
+    def _blend_hex(color_a: str, color_b: str, t: float) -> str:
+        t = max(0.0, min(1.0, t))
+        a = color_a.lstrip("#")
+        b = color_b.lstrip("#")
+        ar, ag, ab = (int(a[i:i+2], 16) for i in (0, 2, 4))
+        br, bg, bb = (int(b[i:i+2], 16) for i in (0, 2, 4))
+        rr = round(ar + (br - ar) * t)
+        rg = round(ag + (bg - ag) * t)
+        rb = round(ab + (bb - ab) * t)
+        return f"#{rr:02X}{rg:02X}{rb:02X}"
 
     @staticmethod
     def _trunc(s: str, n: int) -> str:
