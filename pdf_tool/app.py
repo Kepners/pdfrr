@@ -37,6 +37,11 @@ DIM         = "#1A2030"
 DIM2        = "#0F1520"
 BORDER      = "#1E2D38"
 
+ACTIVE_ACCENT = CYAN
+ACTIVE_HOV = CYAN_HOV
+ACTIVE_DIM = CYAN_DIM
+ACTIVE_BG = SPLIT_BG
+
 
 # ── Folder helpers ────────────────────────────────────────────────────────────
 def get_app_folder() -> Path:
@@ -235,6 +240,10 @@ class App(ctk.CTk):
 
         self._left_frame = None
         self._right_frame = None
+        self._left_glow_outer = None
+        self._left_glow_inner = None
+        self._right_glow_outer = None
+        self._right_glow_inner = None
         self._toggle_left = None
         self._toggle_right = None
         self._top_tab_btn = None
@@ -280,6 +289,10 @@ class App(ctk.CTk):
         self._top_tab_btn = None
         self._left_frame = None
         self._right_frame = None
+        self._left_glow_outer = None
+        self._left_glow_inner = None
+        self._right_glow_outer = None
+        self._right_glow_inner = None
         for w in self.winfo_children():
             w.destroy()
 
@@ -537,9 +550,9 @@ class App(ctk.CTk):
             corner_radius=14,
             fg_color=self._blend_hex(BG, CARD, 0.12),
             hover_color=self._blend_hex(BG, CARD, 0.28),
-            text_color=CYAN,
+            text_color=ACTIVE_ACCENT,
             border_width=1,
-            border_color=self._blend_hex(CYAN, BORDER, 0.65),
+            border_color=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.65),
             font=("Segoe UI", 10, "bold"),
             command=self._edit_split,
         )
@@ -552,8 +565,8 @@ class App(ctk.CTk):
             hover_width=136,
             hover_height=33,
             hover_rely=0.494,
-            border_base=self._blend_hex(CYAN, BORDER, 0.65),
-            border_hover=CYAN,
+            border_base=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.65),
+            border_hover=ACTIVE_ACCENT,
         )
         self._update_top_tab()
 
@@ -575,21 +588,32 @@ class App(ctk.CTk):
 
         self._left_frame = ctk.CTkFrame(
             body, corner_radius=28,
-            fg_color=SPLIT_BG if self._mode == "split" else DIM2,
+            fg_color=ACTIVE_BG if self._mode == "split" else DIM2,
             border_width=1,
-            border_color=self._blend_hex(CYAN if self._mode == "split" else BORDER, BORDER, 0.55),
+            border_color=self._blend_hex(ACTIVE_ACCENT if self._mode == "split" else BORDER, BORDER, 0.55),
         )
         self._left_frame.place(relx=0.02, rely=0.5, relwidth=0.46, relheight=0.96, anchor="w")
 
         self._right_frame = ctk.CTkFrame(
             body, corner_radius=28,
-            fg_color=MERGE_BG if self._mode == "merge" else DIM2,
+            fg_color=ACTIVE_BG if self._mode == "merge" else DIM2,
             border_width=1,
-            border_color=self._blend_hex(AMBER if self._mode == "merge" else BORDER, BORDER, 0.55),
+            border_color=self._blend_hex(ACTIVE_ACCENT if self._mode == "merge" else BORDER, BORDER, 0.55),
         )
         self._right_frame.place(relx=0.52, rely=0.5, relwidth=0.46, relheight=0.96, anchor="w")
 
-        # Soft centre seam glow
+        # Outward vertical edge glows (active side only)
+        self._left_glow_outer = ctk.CTkFrame(body, width=10, corner_radius=5)
+        self._left_glow_outer.place(relx=0.004, rely=0.5, relheight=0.92, anchor="w")
+        self._left_glow_inner = ctk.CTkFrame(body, width=4, corner_radius=2)
+        self._left_glow_inner.place(relx=0.012, rely=0.5, relheight=0.88, anchor="w")
+        self._right_glow_outer = ctk.CTkFrame(body, width=10, corner_radius=5)
+        self._right_glow_outer.place(relx=0.996, rely=0.5, relheight=0.92, anchor="e")
+        self._right_glow_inner = ctk.CTkFrame(body, width=4, corner_radius=2)
+        self._right_glow_inner.place(relx=0.988, rely=0.5, relheight=0.88, anchor="e")
+        self._set_edge_glow_colors(self._mode)
+
+        # Soft centre seam
         ctk.CTkFrame(
             body,
             fg_color=self._blend_hex(BORDER, BG, 0.25),
@@ -617,7 +641,7 @@ class App(ctk.CTk):
             height=34,
             corner_radius=17,
             border_width=1,
-            border_color=self._blend_hex(CYAN if self._mode == "split" else AMBER, BORDER, 0.75),
+            border_color=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.75),
         )
         tog.place(relx=0.5, rely=0.5, anchor="center")
         tog.pack_propagate(False)
@@ -637,7 +661,7 @@ class App(ctk.CTk):
 
         rt = ctk.CTkLabel(tog_inner, text=">",
                           font=("Segoe UI", 13, "bold"),
-                          text_color=AMBER if self._mode == "merge" else SUBTEXT)
+                          text_color=ACTIVE_ACCENT if self._mode == "merge" else SUBTEXT)
         rt.pack(side="left", padx=(0, 4))
 
         self._toggle_left = lt
@@ -651,8 +675,8 @@ class App(ctk.CTk):
             hover_width=80,
             hover_height=38,
             hover_rely=0.494,
-            border_base=self._blend_hex(CYAN if self._mode == "split" else AMBER, BORDER, 0.75),
-            border_hover=CYAN if self._mode == "split" else AMBER,
+            border_base=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.75),
+            border_hover=ACTIVE_ACCENT,
             bind_events=False,
         )
 
@@ -813,17 +837,17 @@ class App(ctk.CTk):
         count = len(self._merge_files)
         panel = ctk.CTkFrame(
             parent,
-            fg_color=self._blend_hex(MERGE_BG if active else DIM2, CARD, 0.35),
+            fg_color=self._blend_hex(ACTIVE_BG if active else DIM2, CARD, 0.35),
             corner_radius=24,
             border_width=1,
-            border_color=self._blend_hex(AMBER if active else BORDER, BORDER, 0.45),
+            border_color=self._blend_hex(ACTIVE_ACCENT if active else BORDER, BORDER, 0.45),
         )
         panel.place(relx=0.5, rely=0.5, relwidth=0.88, relheight=0.92, anchor="center")
 
-        ac = AMBER if active else "#6B6A62"
-        tc = TEXT if active else "#726A60"
-        sc = AMBER if active else "#5E584E"
-        ic = self._blend_hex(AMBER_DIM, BG, 0.12) if active else self._blend_hex(DIM2, BG, 0.28)
+        ac = ACTIVE_ACCENT if active else "#55707D"
+        tc = TEXT if active else "#5E7280"
+        sc = ACTIVE_ACCENT if active else "#4A5D68"
+        ic = self._blend_hex(ACTIVE_DIM, BG, 0.12) if active else self._blend_hex(DIM2, BG, 0.28)
 
         ctk.CTkLabel(panel, text=">",
                      font=("Segoe UI", 34, "bold"), text_color=ac,
@@ -836,7 +860,7 @@ class App(ctk.CTk):
         if active:
             ctk.CTkFrame(
                 panel,
-                fg_color=self._blend_hex(AMBER_DIM, AMBER, 0.18),
+                fg_color=self._blend_hex(ACTIVE_DIM, ACTIVE_ACCENT, 0.18),
                 width=102,
                 height=102,
                 corner_radius=30,
@@ -849,7 +873,7 @@ class App(ctk.CTk):
             height=64,
             corner_radius=16,
             border_width=1,
-            border_color=self._blend_hex(AMBER, BORDER, 0.55) if active else BORDER,
+            border_color=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.55) if active else BORDER,
         )
         ico_f.place(relx=0.5, rely=0.30, anchor="center")
         ctk.CTkLabel(ico_f, text="⊞",
@@ -877,8 +901,8 @@ class App(ctk.CTk):
                 panel, text="GO",
                 font=("Segoe UI", 16, "bold"),
                 height=44, width=132, corner_radius=14,
-                fg_color=AMBER, hover_color=AMBER_HOV, text_color="#1A0E00",
-                border_width=1, border_color=self._blend_hex(AMBER, BORDER, 0.6),
+                fg_color=ACTIVE_ACCENT, hover_color=ACTIVE_HOV, text_color="#001A18",
+                border_width=1, border_color=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.6),
                 command=self._run_merge,
             )
             go_btn.place(relx=0.5, rely=0.75, anchor="center")
@@ -890,15 +914,15 @@ class App(ctk.CTk):
                 hover_width=154,
                 hover_height=54,
                 hover_rely=0.736,
-                border_base=self._blend_hex(AMBER, BORDER, 0.6),
-                border_hover=AMBER,
+                border_base=self._blend_hex(ACTIVE_ACCENT, BORDER, 0.6),
+                border_hover=ACTIVE_ACCENT,
             )
 
             ctk.CTkLabel(
                 panel,
                 text="Use top tab to select file order",
                 font=("Segoe UI", 9, "bold"),
-                text_color=self._blend_hex(AMBER, SUBTEXT, 0.38),
+                text_color=self._blend_hex(ACTIVE_ACCENT, SUBTEXT, 0.38),
             ).place(relx=0.5, rely=0.88, anchor="center")
 
     # ── Toggle ────────────────────────────────────────────────────────────────
@@ -913,18 +937,19 @@ class App(ctk.CTk):
     def _set_toggle_colors(self):
         if self._toggle_left is not None:
             self._toggle_left.configure(
-                text_color=CYAN if self._mode == "split" else SUBTEXT
+                text_color=ACTIVE_ACCENT if self._mode == "split" else SUBTEXT
             )
         if self._toggle_right is not None:
             self._toggle_right.configure(
-                text_color=AMBER if self._mode == "merge" else SUBTEXT
+                text_color=ACTIVE_ACCENT if self._mode == "merge" else SUBTEXT
             )
+        self._set_edge_glow_colors(self._mode)
 
     def _update_top_tab(self):
         if self._top_tab_btn is None:
             return
+        accent = ACTIVE_ACCENT
         if self._mode == "split":
-            accent = CYAN
             self._top_tab_btn.configure(
                 text="Select Pages",
                 text_color=accent,
@@ -932,7 +957,6 @@ class App(ctk.CTk):
                 border_color=self._blend_hex(accent, BORDER, 0.65),
             )
         else:
-            accent = AMBER
             self._top_tab_btn.configure(
                 text="Select Files",
                 text_color=accent,
@@ -943,6 +967,26 @@ class App(ctk.CTk):
         if hover_fx:
             hover_fx["border_base"] = self._blend_hex(accent, BORDER, 0.65)
             hover_fx["border_hover"] = accent
+
+    def _set_edge_glow_colors(self, active_mode: str):
+        left_outer, left_inner, right_outer, right_inner = self._edge_glow_palette(active_mode)
+        if self._left_glow_outer is not None:
+            self._left_glow_outer.configure(fg_color=left_outer)
+        if self._left_glow_inner is not None:
+            self._left_glow_inner.configure(fg_color=left_inner)
+        if self._right_glow_outer is not None:
+            self._right_glow_outer.configure(fg_color=right_outer)
+        if self._right_glow_inner is not None:
+            self._right_glow_inner.configure(fg_color=right_inner)
+
+    def _edge_glow_palette(self, active_mode: str):
+        on_outer = self._blend_hex(ACTIVE_ACCENT, BG, 0.68)
+        on_inner = self._blend_hex(ACTIVE_ACCENT, BG, 0.52)
+        off_outer = self._blend_hex(BORDER, BG, 0.84)
+        off_inner = self._blend_hex(BORDER, BG, 0.9)
+        if active_mode == "split":
+            return on_outer, on_inner, off_outer, off_inner
+        return off_outer, off_inner, on_outer, on_inner
 
     def _animate_mode_panels(self, from_mode: str, to_mode: str):
         if self._left_frame is None or self._right_frame is None:
@@ -956,14 +1000,16 @@ class App(ctk.CTk):
                 pass
             self._mode_anim_after = None
 
-        left_from = SPLIT_BG if from_mode == "split" else DIM2
-        left_to = SPLIT_BG if to_mode == "split" else DIM2
-        right_from = MERGE_BG if from_mode == "merge" else DIM2
-        right_to = MERGE_BG if to_mode == "merge" else DIM2
-        left_border_from = self._blend_hex(CYAN if from_mode == "split" else BORDER, BORDER, 0.55)
-        left_border_to = self._blend_hex(CYAN if to_mode == "split" else BORDER, BORDER, 0.55)
-        right_border_from = self._blend_hex(AMBER if from_mode == "merge" else BORDER, BORDER, 0.55)
-        right_border_to = self._blend_hex(AMBER if to_mode == "merge" else BORDER, BORDER, 0.55)
+        left_from = ACTIVE_BG if from_mode == "split" else DIM2
+        left_to = ACTIVE_BG if to_mode == "split" else DIM2
+        right_from = ACTIVE_BG if from_mode == "merge" else DIM2
+        right_to = ACTIVE_BG if to_mode == "merge" else DIM2
+        left_border_from = self._blend_hex(ACTIVE_ACCENT if from_mode == "split" else BORDER, BORDER, 0.55)
+        left_border_to = self._blend_hex(ACTIVE_ACCENT if to_mode == "split" else BORDER, BORDER, 0.55)
+        right_border_from = self._blend_hex(ACTIVE_ACCENT if from_mode == "merge" else BORDER, BORDER, 0.55)
+        right_border_to = self._blend_hex(ACTIVE_ACCENT if to_mode == "merge" else BORDER, BORDER, 0.55)
+        glow_left_outer_from, glow_left_inner_from, glow_right_outer_from, glow_right_inner_from = self._edge_glow_palette(from_mode)
+        glow_left_outer_to, glow_left_inner_to, glow_right_outer_to, glow_right_inner_to = self._edge_glow_palette(to_mode)
         steps = 8
         delay_ms = 16
 
@@ -977,6 +1023,22 @@ class App(ctk.CTk):
                 fg_color=self._blend_hex(right_from, right_to, t),
                 border_color=self._blend_hex(right_border_from, right_border_to, t),
             )
+            if self._left_glow_outer is not None:
+                self._left_glow_outer.configure(
+                    fg_color=self._blend_hex(glow_left_outer_from, glow_left_outer_to, t)
+                )
+            if self._left_glow_inner is not None:
+                self._left_glow_inner.configure(
+                    fg_color=self._blend_hex(glow_left_inner_from, glow_left_inner_to, t)
+                )
+            if self._right_glow_outer is not None:
+                self._right_glow_outer.configure(
+                    fg_color=self._blend_hex(glow_right_outer_from, glow_right_outer_to, t)
+                )
+            if self._right_glow_inner is not None:
+                self._right_glow_inner.configure(
+                    fg_color=self._blend_hex(glow_right_inner_from, glow_right_inner_to, t)
+                )
             if i < steps:
                 self._mode_anim_after = self.after(delay_ms, lambda: step(i + 1))
             else:
@@ -1220,7 +1282,7 @@ class App(ctk.CTk):
                     variable=var,
                     font=("Segoe UI", 11), text_color=TEXT,
                     checkbox_width=18, checkbox_height=18,
-                    border_color=AMBER, checkmark_color=BG, fg_color=AMBER,
+                    border_color=ACTIVE_ACCENT, checkmark_color=BG, fg_color=ACTIVE_ACCENT,
                 ).pack(side="left", padx=(6, 0), fill="x", expand=True)
 
         render()
@@ -1232,7 +1294,7 @@ class App(ctk.CTk):
 
         ctk.CTkButton(
             d, text="Apply", height=38, corner_radius=10,
-            fg_color=AMBER, hover_color=AMBER_HOV, text_color="#1A0E00",
+            fg_color=ACTIVE_ACCENT, hover_color=ACTIVE_HOV, text_color="#001A18",
             font=("Segoe UI", 13, "bold"),
             command=apply,
         ).pack(pady=8, padx=16, fill="x")
@@ -1284,7 +1346,7 @@ class App(ctk.CTk):
         while out_file.exists():
             out_file = self._folder / f"merged_{i}.pdf"
             i += 1
-        self._build_progress("Merging", AMBER)
+        self._build_progress("Merging", ACTIVE_ACCENT)
 
         def run():
             try:
